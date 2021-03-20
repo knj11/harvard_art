@@ -66,22 +66,6 @@ async function prefetchCategoryLists() {
   }
 }
 
-async function fetchObjects() {
-  const url = `${BASE_URL}/object?${KEY}`;
-  onFetchStart();
-
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
-
-    return data;
-  } catch (error) {
-    console.error(error);
-  } finally {
-    onFetchEnd();
-  }
-}
-
 function buildSearchString() {
   const [classification, century, keyword] = [
     $("#select-classification").val(),
@@ -124,19 +108,13 @@ function onFetchEnd() {
 }
 
 function renderPreview(record) {
-  //What can you do if description is undifined?
-  let description = record.description || "";
-  let baseimageurl = record.images ? record.images[0].baseimageurl : '';
-
-  const {title} = record;
-
   let div = $(`
   <div class="object-preview">
     <a href="#">
-      ${baseimageurl ? `<img src="${baseimageurl}" />`: ''}
-      <h3>${title}</h3>
+      ${record.primaryimageurl ? `<img src="${record.primaryimageurl}" />` : ""}
+      <h3>${record.title}</h3>
       <br>
-      ${description ? `<h3>${description}</h3>` : ""}
+      ${record.description ? `<h3>${record.description}</h3>` : ""}
     </a>
   </div>
   `);
@@ -144,12 +122,6 @@ function renderPreview(record) {
   div.data("record", record);
 
   return div;
-
-  //Some of the items might be undefined, if so... don't render them
-
-  //With the record attached as data, with key 'record'
-
-  // return new element
 }
 
 function updatePreview({ info, records }) {
@@ -197,36 +169,15 @@ $("#preview .next, #preview .previous").on("click", async function () {
 $("#preview").on("click", ".object-preview", function (event) {
   event.preventDefault(); // they're anchor tags, so don't follow the link
   // find the '.object-preview' element by using .closest() from the target
-  const previewObj = $(this).data("record");
+  const record = $(this).data("record");
   // recover the record from the element using the .data('record') we attached
   // log out the record object to see the shape of the data
-  console.log("previewObj", previewObj);
+  // NEW => set the html() on the '#feature' element to renderFeature()
+  $("#feature").html(renderFeature(record));
 });
 
 function renderFeature(record) {
-  /**
-   * We need to read, from record, the following:
-   * HEADER: title, dated
-   * FACTS: description, culture, style, technique, medium, dimensions, people, department, division, contact, creditline
-   * PHOTOS: images, primaryimageurl
-   */
-
-  // build and return template
-  const {
-    title,
-    dated,
-    description,
-    culture,
-    style,
-    technique,
-    medium,
-    dimensions,
-    department,
-    division,
-    contact,
-    creditline,
-    images: [{ baseimageurl }],
-  } = record;
+  const { title, dated } = record;
 
   return $(`
     <div class="object-feature">
@@ -236,28 +187,42 @@ function renderFeature(record) {
       </header>
       <section class="facts">
         ${factHTML("Description", record.description)}
-        ${factHTML("culture", record.culture)}
+        ${factHTML("Culture", record.culture, record.culture)}
         ${factHTML("Style", record.style)}
-        ${factHTML("Technique", record.style)}
-        ${factHTML("Style", record.style)}
-        ${factHTML("Style", record.style)}
-        ${factHTML("Style", record.style)}
-        ${factHTML("Style", record.style)}
-        ${factHTML("Culture", record.culture, "culture")}
+        ${factHTML("Technique", record.technique, record.technique)}
+        ${factHTML("Medium", record.medium, record.medium)}
+        ${
+          record.people
+            ? record.people
+                .map((person) =>
+                  factHTML("Person", person.displayname, "person")
+                )
+                .join("")
+            : ""
+        }
+        ${factHTML("Dimensions", record.dimensions)}
+        ${factHTML("Department", record.department)}
+        ${factHTML("Division", record.division)}
+        ${factHTML(
+          "Contact",
+          `<a target="_blank" href="mailto:${record.contact}">${record.contact}</a>`
+        )}
+        ${factHTML("Creditline", record.creditline)}
       </section>
       <section class="photos">
-        <img src="${baseimageurl}" />
+        ${photosHTML(record.images, record.primaryimageurl)}
       </section>
     </div>
   `);
 }
 
 function searchURL(searchType, searchString) {
-  return `${BASE_URL}/object?${KEY}&${searchType}=${searchString}`;
+  return encodeURI(
+    `${BASE_URL}/object?${KEY}&${searchType.toLowerCase()}=${searchString}`
+  );
 }
 
 function factHTML(title, content, searchTerm = null) {
-  // if content is empty or undefined, return an empty string ''
   if (!content) {
     return "";
   } else if (!searchTerm) {
@@ -266,8 +231,38 @@ function factHTML(title, content, searchTerm = null) {
   } else {
     return `<span class="title">${title}</span>
     <span class="content"><a href="${searchURL(
-      content,
+      title,
       searchTerm
     )}">${content}</a></span>`;
   }
 }
+
+function photosHTML(images, primaryimageurl) {
+  if (images && images.length > 0) {
+    return images
+      .map((image) => `<img src="${image.baseimageurl}" />`)
+      .join("");
+  } else if (primaryimageurl) {
+    return `<img src="${primaryimageurl}" />`;
+  } else {
+    return "";
+  }
+}
+
+$("#feature").on("click", "a", async function (event) {
+  const link = $(this).attr("href");
+  if (link.startsWith("mailto")) {
+    return;
+  }
+  event.preventDefault();
+  onFetchStart();
+  try {
+    const response = await fetch(link);
+    const data = await response.json();
+    updatePreview(data);
+  } catch (error) {
+    console.log(error);
+  } finally {
+    onFetchEnd();
+  }
+});
